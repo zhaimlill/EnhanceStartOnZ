@@ -12,3 +12,5 @@ The following knowledge is involved in this project:
 6. Allocate DD dynamically.
 
 More details please see EnhanceStartOnZ.ppt.
+
+Compile: please use CNTL(ALL) to assemble and link.
