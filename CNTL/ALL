@@ -1,0 +1,43 @@
+//MINBUILD    JOB  (ACCT#),'TSMXZ',CLASS=A,MSGCLASS=X,NOTIFY=&SYSUID,
+//          MSGLEVEL=(1,1)
+//            JCLLIB ORDER=ASM.SASMSAM1
+//*
+//********************************************************************
+//*   ASSEMBLY,LINK                                                ***
+//********************************************************************
+//CBADGUY     EXEC ASMACL,PARM.C='OBJ,NODECK,TERM,XREF(SHORT),RENT',
+//          PARM.L='RENT,AC(1)'
+//C.SYSLIB    DD  DISP=SHR,DSN=SYS1.MACLIB
+//            DD  DISP=SHR,DSN=RSRTE.VENDOR.XDC.XDCMACS
+//            DD  DISP=SHR,DSN=RSRTE.ZOSR113.MACLIB
+//C.SYSPRINT  DD  DISP=SHR,DSN=&SYSUID..BUILD.OUTLIST(BADGUY)
+//C.SYSTERM   DD  SYSOUT=*
+//C.SYSIN     DD  DISP=SHR,DSN=&SYSUID..BUILD.ASM(BADGUY)
+//L.SYSLMOD   DD  DSN=&SYSUID..BUILD.LOADLIB(BADGUY),
+//          SPACE=(TRK,(2,12)),
+//          DISP=(OLD,CATLG,KEEP),LRECL=80,RECFM=U
+//*
+//*
+//********************************************************************
+//*   ASSEMBLY,LINK                                                ***
+//********************************************************************
+//CHOOKINS    EXEC ASMACL,PARM.C='OBJ,NODECK,TERM,XREF(SHORT),RENT',
+//          PARM.L='RENT,AC(1)'
+//C.SYSLIB    DD  DISP=SHR,DSN=SYS1.MACLIB
+//            DD  DISP=SHR,DSN=RSRTE.VENDOR.XDC.XDCMACS
+//            DD  DISP=SHR,DSN=RSRTE.ZOSR113.MACLIB
+//C.SYSPRINT  DD  DISP=SHR,DSN=&SYSUID..BUILD.OUTLIST(HOOKINST)
+//C.SYSTERM   DD  SYSOUT=*
+//C.SYSIN     DD  DISP=SHR,DSN=&SYSUID..BUILD.ASM(HOOKINST)
+//L.SYSLMOD   DD  DSN=&SYSUID..BUILD.LOADLIB(HOOKINST),
+//          SPACE=(TRK,(2,12)),
+//          DISP=(OLD,CATLG,KEEP),LRECL=80,RECFM=U
+//*
+//APF     EXEC PGM=CSVAPF00
+//APFLIB  DD DISP=SHR,DSN=&SYSUID..BUILD.LOADLIB
+//*
+//********************************************************************
+//*   RUN                                                          ***
+//********************************************************************
+//SRUNEXE     EXEC PGM=HOOKINST,COND=(0,NE)
+//STEPLIB     DD  DISP=SHR,DSN=&SYSUID..BUILD.LOADLIB

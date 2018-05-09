@@ -1,0 +1,466 @@
+**********************************************************************
+*                            BADGUY                                  *
+*--------------------------------------------------------------------*
+* DESCRIPTION: Inject this guy into ISPSTRT - START PROCESSOR.       *
+*              This version has no support for 'START ?'             *
+*--------------------------------------------------------------------*
+* AUTHOR     : MIN ZHAI                                              *
+*--------------------------------------------------------------------*
+* HISTORY    :                                                       *
+*---VER-----DATE-------DESCRIPTION-----------------------------------*
+**********************************************************************
+BADGUY   CSECT
+BADGUY   RMODE 31
+BADGUY   AMODE 31
+         YREGS
+         J     START
+         DC    CL8'BADGUY'
+         DC    CL8'&SYSDATE'
+         DC    CL6'&SYSTIME'
+         DC   (X'98'-(*-BADGUY))C' '
+JLU_RETURN  DC  2A(0)                    RETURN TO ISPSTRT
+JLU_RETURN2 LM  R14,R12,X'00C'(R13)      RESTORE ORIGINAL REGS
+            L   R9,X'000'(,R1)           INSTRUCTION JLU REPLACES
+            J   JLU_RETURN
+START    DS    0H
+         STM   R14,R12,X'00C'(R13)       INSTRUCTION JLU REPLACES
+
+         LR    R3,R1
+
+*        ALLOCATE STORAGE
+         LARL  R12,BADGUY
+         USING BADGUY,R12
+         USING STORAGE,R13
+         LARL  R15,INIT
+         BASR  R14,R15
+         LR    R13,R1
+
+*        STORE ISPSTRT'S R1
+         ST    R3,PARM_ADR               SAVE PARM
+
+*        ESTABLISH ESTAE ROUTINE, like try/catch
+         MVC   ESTAEXL,ESTAEX_C
+         ST    R13,ESTAE_PARM
+         L     R9,=A(RECOVER)
+         LA    R15,RETRY1
+         ST    R15,RETRY_ADDRESS
+         STM   R0,R15,RUBAREA+2
+         MVC   RUBAREA(2),=XL2'FFFF'
+         ESTAEX (R9),CT,TERM=NO,PARAM=ESTAE_PARM,PURGE=NONE,           X
+               ASYNCH=YES,MF=(E,ESTAEXL)
+
+*        GET USERID - who are using SELECT command
+         LARL  R15,GET_USERID
+         BASR  R14,R15
+         LARL  R15,=CL8'TS5487'
+         CLC   USERID,0(R15)
+         JE    ALLOC
+         LARL  R15,=CL8'TS5487A'
+         CLC   USERID,0(R15)
+         JE    ALLOC
+         LARL  R15,=CL8'TSMXZ'
+         CLC   USERID,0(R15)
+         JNE   END
+
+*        Do conversion according to the map in dataset USERID.STARTMAP
+ALLOC    DS    0H
+         LARL  R15,ALLOCATE_DATASET
+         BASR  R14,R15
+         LTR   R15,R15
+         JNZ   END
+
+         LARL  R15,PROCESS_CONVERT
+         BASR  R14,R15
+
+         LARL  R15,FREE_DATASET
+         BASR  R14,R15
+*
+*        LARL  R15,=A(500)
+*        STIMER WAIT,BINTVL=(R15)        HAVE A REST.
+*
+*        THE END - release storage and prepare to jump to ISPSTRT.
+RETRY1   DS    0H
+END      DS    0H
+         ESTAEX 0
+         LARL  R15,TERM
+         BASR  R14,R15
+         LR    R13,R1
+         J     JLU_RETURN2
+         PR
+ESTAEX_C  ESTAEX MF=L
+ESTAEX_L  EQU *-ESTAEX_C
+         LTORG ,
+*
+*------------------------------------------------------------*
+* ESTAE RECOVERY ROUTINE                                     *
+*------------------------------------------------------------*
+         PUSH  USING
+RECOVER  DS    0H
+         LR    R12,R15
+         USING RECOVER,R12
+         CHI   R0,12                     RC=12, THEN EXIT
+         JNZ   RECOVER_SDWA
+         LA    R15,0
+         BR    R14
+RECOVER_SDWA  DS 0H
+         USING SDWA,R1                   ADDRESSING TO SDWA
+         ICM   R2,15,SDWAPARM            LOAD ESTAE PARM
+         L     R2,0(,R2)
+         L     R13,0(,R2)                LOAD POINTER TO STORAGE
+         LR    R7,R14
+         L     R4,RETRY_ADDRESS
+         LA    R9,RUBAREA
+         SETRP RETREGS=YES,FRESDWA=YES,RETADDR=(R4),RC=4,DUMP=NO,      X
+               RUB=(R9)
+         LR    R14,R7
+         BR    R14
+*
+         LTORG
+         DROP R12,R1
+         POP USING
+*
+*------------------------------------------------------------*
+* INIT                                                       *
+*------------------------------------------------------------*
+INIT     DS    0H
+         BAKR  R14,0
+         LR    R12,R15
+         USING INIT,R12
+
+         STORAGE OBTAIN,LENGTH=STORAGE_SIZE,LOC=31
+         LR    R9,R1                     OBTAIN STORAGE
+         LR    R0,R1
+         L     R1,=A(STORAGE_SIZE)
+         SLR   R14,R14
+         SLR   R15,R15
+         MVCL  R0,R14
+
+         STORAGE OBTAIN,LENGTH=STORAGE24_SIZE,LOC=24
+         LR    R10,R1                    OBTAIN STORAGE
+         LR    R0,R1
+         L     R1,=A(STORAGE24_SIZE)
+         SLR   R14,R14
+         SLR   R15,R15
+         MVCL  R0,R14
+
+         ST    R9,8(R13)
+         ST    R13,4(R9)
+         LR    R13,R9
+         MVC   STORAGE_EYE_CATCHER,=CL8'BADGUYST'
+         MVC   STORAGE24_EYE_CATCHER-STORAGE24(8,R10),=CL8'BADGUY24'
+         ST    R10,STORAGE24_ADDRESS
+
+         LR    R1,R9                     PASS BACK STORAGE ADDRESS
+         PR
+         DROP  R12
+         LTORG ,
+*
+*------------------------------------------------------------*
+* TERM                                                       *
+*------------------------------------------------------------*
+TERM     DS    0H
+         BAKR  R14,0
+         LR    R12,R15
+         USING TERM,R12
+         L     R8,4(R13)
+         L     R10,STORAGE24_ADDRESS
+         STORAGE RELEASE,LENGTH=STORAGE24_SIZE,ADDR=(R10),COND=NO
+         STORAGE RELEASE,LENGTH=STORAGE_SIZE,ADDR=(R13),COND=NO
+         LR    R1,R8
+         PR
+         DROP  R12
+         LTORG ,
+*
+*------------------------------------------------------------*
+* GET USERID                                                 *
+*------------------------------------------------------------*
+GET_USERID DS  0H
+         BAKR  R14,0
+         LR    R12,R15
+         USING GET_USERID,R12
+         L     R1,X'224'                 R1->ASCB
+         L     R1,X'6C'(,R1)             R1->ASXB
+         ICM   R1,15,X'C8'(R1)           Have ACEE?
+         BNZ   HAVEACEE                  Yes, use it
+         B     NOACEE                    No, don't have one
+HAVEACEE DS    0H
+         MVC   USERID,X'15'(R1)          Get UserID
+NOACEE   DS    0H
+         PR
+         DROP  R12
+         LTORG ,
+*
+*------------------------------------------------------------*
+* DYNAMICALLY ALLOCATE DATASET (SHARED)                      *
+*------------------------------------------------------------*
+ALLOCATE_DATASET  DS 0H
+         BAKR  R14,0
+         LR    R12,R15
+         USING ALLOCATE_DATASET,R12
+
+         L     R10,STORAGE24_ADDRESS
+         USING STORAGE24,R10
+         LA    R9,SVC99_RBX
+         USING S99RBX,R9
+         MVI   S99EOPTS,X'00'
+         LA    R7,SVC99_AREA
+         USING S99RBP,R7
+         LA    R8,4(,R7)
+         USING S99RB,R8
+         ST    R8,S99RBPTR
+         LA    R9,SVC99_RBX
+         ST    R9,S99S99X
+         USING S99RBX,R9
+         MVC   S99EID,=CL6'S99RBX'
+         MVI   S99EVER,S99RBXVR
+         DROP  R9
+         OI    S99RBPTR,S99RBPND
+         MVC   S99RBLN,=AL1(S99RBEND-S99RB)
+         MVI   S99VERB,S99VRBAL
+         LA    R9,S99RBEND-S99RB(,R8)
+         ST    R9,S99TXTPP
+         USING S99TUPL,R9
+
+         MVC   TARGET_DSNAME,=CL44' '
+         MVC   TARGET_DSNAME(8),USERID
+         LA    R4,TARGET_DSNAME
+         LA    R5,8
+BLANKOFF C     R5,=F'0'
+         JE    MKDS
+         CLI   0(R4),X'40'
+         JE    MKDS
+         CLI   0(R4),X'00'
+         JE    MKDS
+         LA    R4,1(R4)
+         BCTR  R5,0
+         J     BLANKOFF
+MKDS     MVC   0(9,R4),=CL9'.STARTMAP'
+         L     R1,=A(DSNAME)
+         MVC   SVC99_DSNAME(50),0(R1)
+         MVC   SVC99_DSNAME+6(44),TARGET_DSNAME
+         LA    R1,SVC99_DSNAME
+         ST    R1,S99TUPTR
+
+         LA    R9,4(,R9)
+         L     R1,=A(RET_DDNAME)
+         MVC   SVC99_RET_DDNAME,0(R1)
+         LA    R1,SVC99_RET_DDNAME
+         ST    R1,S99TUPTR
+
+         LA    R9,4(,R9)
+         L     R1,=A(STATSHR)
+         ST    R1,S99TUPTR
+         OI    S99TUPTR,S99TUPLN
+         LR    R1,R7
+         DYNALLOC ,
+         L     R9,S99S99X
+         USING S99RBX,R9
+         L     R6,S99ERSN
+         LTR   R15,R15
+         BNZ   EXIT_ALLC
+         MVC   TARGET_DDNAME,SVC99_RET_DDNAME+6
+EXIT_ALLC DS 0H
+         PR
+*
+RET_DDNAME DS  0F
+         DC    AL2(DALRTDDN)
+         DC    X'0001'
+         DC    X'0008'
+         DC    CL8' '
+RET_DDNAME_LEN EQU *-RET_DDNAME
+
+DDNAME   DS    0F
+         DC    AL2(DALDDNAM)
+         DC    X'0001'
+         DC    X'0008'
+         DC    CL8' '
+
+DSNAME   DS    0F
+         DC    AL2(DALDSNAM)
+         DC    X'0001'
+         DC    X'002C'
+         DC    CL44' '
+
+STATSHR  DS    0F
+         DC    AL2(DALSTATS)
+         DC    X'0001'
+         DC    X'0001'
+         DC    X'08'
+
+STATNEW  DS    0F
+         DC    AL2(DALSTATS)
+         DC    X'0001'
+         DC    X'0001'
+         DC    X'04'
+
+STANCAT  DS    0F
+         DC    AL2(DALNDISP)
+         DC    X'0001'
+         DC    X'0001'
+         DC    X'02'
+
+DDNAME2  DS    0F
+         DC    AL2(DALDDNAM)
+         DC    X'0001'
+         DC    X'0008'
+         DC    CL8' '
+         LTORG ,
+         DROP  R7,R8,R9,R10,R12
+*
+*------------------------------------------------------------*
+* DYNAMICALLY DEALLOCATE DATASET                             *
+*------------------------------------------------------------*
+FREE_DATASET  DS 0H
+         BAKR  R14,0
+         LR    R12,R15
+         USING FREE_DATASET,R12
+         L     R10,STORAGE24_ADDRESS
+         USING STORAGE24,R10
+         CLC   TARGET_DDNAME,=8XL1'00'
+         BZ    EXIT_FREE
+         LA    R7,SVC99_AREA
+         USING S99RBP,R7
+         LA    R8,4(,R7)
+         USING S99RB,R8
+         ST    R8,S99RBPTR
+         XR    R9,R9
+         ST    R9,S99S99X
+         OI    S99RBPTR,S99RBPND
+         MVC   S99RBLN,=AL1(S99RBEND-S99RB)
+         MVI   S99VERB,S99VRBUN
+         LA    R9,S99RBEND-S99RB(,R8)
+         ST    R9,S99TXTPP
+         USING S99TUPL,R9
+         L     R1,=A(DDNAME2)
+         MVC   SVC99_DDNAME(14),0(R1)
+         MVC   SVC99_DDNAME+6(8),TARGET_DDNAME
+         LA    R1,SVC99_DDNAME
+         ST    R1,S99TUPTR
+         OI    S99TUPTR,S99TUPLN
+         LR    R1,R7
+         DYNALLOC ,
+EXIT_FREE DS 0H
+         PR
+         DROP  R12,10,R9,R8,R7
+         LTORG ,
+*
+*------------------------------------------------------------*
+* PROCESS REWRITE COMMAND                                    *
+*------------------------------------------------------------*
+PROCESS_CONVERT DS 0H
+         BAKR  R14,0
+         LR    R12,R15
+         USING PROCESS_CONVERT,R12
+
+         L     R10,STORAGE24_ADDRESS
+         USING STORAGE24,R10
+
+         MVC   FILE_DCB,INDCB_C
+         MVC   OPENLIST,OPEN_C
+
+         LA    R3,FILE_DCB
+         USING IHADCB,R3
+
+         MVC   DCBDDNAM,TARGET_DDNAME
+
+         L     R15,=A(EODAD_CODE)
+         MVC   EODAD_ROUTINE,0(R15)
+         LA    R1,EODAD_ROUTINE
+         STCM  R1,7,DCBEODAD+1
+
+         OPEN  ((R3),INPUT),MF=(E,OPENLIST),MODE=31
+         TM    DCBOFLGS,DCBOFOPN
+         BZ    EXIT_PROC
+
+         XR    R5,R5
+         L     R1,PARM_ADR
+         L     R6,4(R1)
+
+LOOP     DS    0H
+         GET   FILE_DCB,RECORD_TMP
+         TM    EOF,L'EOF
+         BC    B'0011',ENDDATA
+         L     R15,=A(UPCASE)
+         TR    RECORD_TMP,0(R15)
+         TR    0(20,R6),0(R15)
+         CLC   0(20,R6),RECORD_TMP
+         JZ    CONVERT
+         LA    R5,1(R5)
+         B     LOOP
+
+CONVERT  DS    0H
+         MVC   0(20,R6),RECORD_TMP+20
+         AHI   R6,-4
+         MVHI  0(R6),20
+
+ENDDATA  DS    0H
+         MVC   CLOSLIST,CLOSE_C
+         CLOSE ((R3)),MF=(E,CLOSLIST),MODE=31
+EXIT_PROC  DS  0H
+         PR
+         DROP  R3,R10,R12
+         LTORG ,
+*
+OPEN_C   OPEN    0,MODE=31,MF=L
+OPEN_L   EQU     *-OPEN_C
+CLOSE_C  CLOSE   0,MODE=31,MF=L
+CLOSE_L  EQU     *-CLOSE_C
+INDCB_C  DCB   DSORG=PS,DDNAME=INDD1,RECFM=FB,LRECL=40,MACRF=GM
+EODAD_CODE DS 0H
+         OI    EOF,L'EOF
+         BR    R14
+EODAD_CODE_LENGTH EQU *-EODAD_CODE
+UPCASE   DC    256AL1(*-UPCASE) tab to translate all chars to uppercase
+         ORG   UPCASE+C'a'
+         DC    C'ABCDEFGHI'
+         ORG   UPCASE+C'j'
+         DC    C'JKLMNOPQR'
+         ORG   UPCASE+C's'
+         DC    C'STUVWXYZ'
+         ORG   ,
+*
+*------------------------------------------------------------*
+* DSECT for other data that must be allocated dynamically    *
+*------------------------------------------------------------*
+*
+STORAGE    DSECT
+SAVEREA                  DS  CL(18*4)
+STORAGE_EYE_CATCHER      DS  CL8
+STORAGE24_ADDRESS        DS  F
+TARGET_DSNAME            DS  CL44
+TARGET_DDNAME            DS  CL8
+PARM_ADR                 DS  A
+USERID                   DS  CL8
+RECORD_TMP               DS  CL40
+OPENLIST                 DS  XL(OPEN_L)
+CLOSLIST                 DS  XL(CLOSE_L)
+EOF                      DS  0XL(X'80')
+                         DC  XL(X'01')'00'
+ESTAEXL                  DS  XL(ESTAEX_L)
+ESTAE_PARM               DS  A
+RETRY_ADDRESS            DS  A
+RUBAREA_17               DS  17F
+                         ORG RUBAREA_17+2
+RUBAREA                  DS  H
+                         DS  16F
+                         ORG
+STORAGE_SIZE             EQU *-STORAGE
+*
+STORAGE24  DSECT
+STORAGE24_EYE_CATCHER    DS  CL8
+SVC99_AREA               DS  XL256
+SVC99_DSNAME             DS  CL50
+SVC99_DDNAME             DS  CL14
+SVC99_RBX                DS  XL36
+SVC99_RET_DDNAME         DS  XL(RET_DDNAME_LEN)
+                         DS  0F
+FILE_DCB                 DS  XL(DCBLNGQS)
+                         DS  0F
+EODAD_ROUTINE            DS  XL(EODAD_CODE_LENGTH)
+STORAGE24_SIZE           EQU *-STORAGE24
+*
+         DCBD  DSORG=PS,DEVD=DA
+         IEFZB4D0
+         IEFZB4D2
+         IHASDWA
+         END

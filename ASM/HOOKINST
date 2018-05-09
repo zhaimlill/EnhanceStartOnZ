@@ -1,0 +1,198 @@
+**********************************************************************
+*                       HOOKINST                                     *
+*--------------------------------------------------------------------*
+* FUNCTION   : INTERCEPT START TO BADGUY                             *
+*--------------------------------------------------------------------*
+*DESCRIPTION:                                                        *
+*--------------------------------------------------------------------*
+* AUTHOR     : MIN ZHAI                                              *
+* PROGRAM    : TSMXZ.ASM.TEST(HOOKINST)                              *
+*--------------------------------------------------------------------*
+* HISTORY    :                                                       *
+*---VER-----DATE-------DESCRIPTION-----------------------------------*
+**********************************************************************
+         MACRO
+&LABEL   $HEX2CH &IN=,&OUT=,&HEXTAB=
+         LA    R0,8
+         LA    R1,&OUT
+         ICM   R15,B'1111',&IN
+.*
+A&SYSNDX DS    0H
+         SLR   R14,R14
+         SLDL  R14,4
+         IC    R14,&HEXTAB.(R14)
+         STC   R14,0(,R1)
+         LA    R1,1(,R1)
+         BCT   R0,A&SYSNDX
+         MEND
+*
+HOOKINST CSECT
+HOOKINST RMODE 31
+HOOKINST AMODE 31
+         YREGS
+*
+*        *****************************************************
+*        *  Init                                             *
+*        *****************************************************
+         LR    R12,R15
+         USING HOOKINST,R12
+         BAKR  R14,0
+         STORAGE OBTAIN,LENGTH=STORLEN,ADDR=(R13),SP=0
+         USING STORAGE,R13
+         MVC   EYE_CATCHER,=CL8'HOOKINST'
+         STORAGE OBTAIN,SP=0,COND=NO,LENGTH=STORLEN24,LOC=BELOW
+         LR    R11,R1
+         ST    R11,STORAGE24_ADDRESS
+         USING STORAGE24,R11
+         MVC   STORAGE24_EYE_CATCHER,=CL8'HOOKIN24'
+*
+*        *****************************************************
+*        *  SRCH ISPSTRT                                     *
+*        *****************************************************
+         CSVQUERY INEPNAME==CL8'ISPSTRT',SEARCH=LPA,                   X
+               OUTLENGTH=STARTLEN,OUTLOADPT=STARTADDR,                 X
+               PLISTVER=6,MF=(E,CSVQUERY_LIST)
+         LTR   R15,R15
+         BNZ   MAINEXIT
+*        WTO ADDRESS OF ISPSTRT
+         MVC   WTO_X,WTO_C
+         LA    R15,28
+         STH   R15,WTO_XLEN
+         MVC   WTO_XTEXT(20),=CL20'ADDR OF ISPSTRT :'
+         $HEX2CH IN=STARTADDR,OUT=WTO_XTEXT+20,HEXTAB=HEXTB1
+         WTO   TEXT=WTO_XLEN,MF=(E,WTO_X)
+*
+*        *****************************************************
+*        *  LOAD BADGUY                                      *
+*        *****************************************************
+         LOAD EP=BADGUY
+         N     R1,=X'00FFFFFF'                 CLEAR LOADER FLAGS
+         SLL   R1,3                            MULTIPLY LENGTH BY 8
+         LR    R3,R1
+         MODESET MODE=SUP
+         STORAGE  OBTAIN,SP=241,COND=NO,LENGTH=(R3),KEY=0
+         LR    R2,R1
+         ST    R2,BADGUYADDR                   R2:  ADDRESS
+         ST    R3,BADGUYLEN
+         MODESET MODE=PROB
+         MVC   OPENLIST,OPEN_C
+         MVC   STEPLIB_DCB,STEPLIB_C
+         LA    R5,STEPLIB_DCB
+         OPEN  ((R5)),MODE=31,MF=(E,OPENLIST)
+         XC    $LOAD,$LOAD
+         LOAD  EP=BADGUY,ADDR=(R2),DCB=(R5),SF=(E,$LOAD)
+         LA    R5,STEPLIB_DCB
+         MVC   CLOSLIST,CLOSE_C
+         CLOSE ((R5)),MODE=31,MF=(E,CLOSLIST)
+*        MVC   BADGUYADDR,=X'2F91C8A8'
+**       WTO ADDRESS OF BADGUY
+         MVC   WTO_X,WTO_C
+         LA    R15,28
+         STH   R15,WTO_XLEN
+         MVC   WTO_XTEXT(20),=CL20'ADDR OF BADGUY  :'
+         $HEX2CH IN=BADGUYADDR,OUT=WTO_XTEXT+20,HEXTAB=HEXTB1
+         WTO   TEXT=WTO_XLEN,MF=(E,WTO_X)
+*
+*        *****************************************************
+*        *  Calculate the difference between ISPSTRT and BADGUY
+*        *****************************************************
+         LLGT R0,STARTADDR
+         AHI  R0,X'1E'
+         LLGT R1,BADGUYADDR
+         SR   R1,R0
+         SRA  R1,1
+         SLDL R0,16
+         ICM  R0,B'1100',=XL2'C0F4'
+         ICM  R1,B'0011',=XL2'0700'
+         STM  R0,R1,JLU_INSTR
+         LLGT R0,BADGUYADDR
+         AHI  R0,X'98'
+
+         LLGT R1,STARTADDR
+         AHI  R1,X'26'
+         SR   R1,R0
+         SRA  R1,1
+         SLDL R0,16
+         ICM  R0,B'1100',=XL2'C0F4'
+         ICM  R1,B'0011',=XL2'0700'
+         STM  R0,R1,JLU_INSTR_RET
+         LLGT R4,BADGUYADDR
+         LG   R0,JLU_INSTR_RET
+         MODESET KEY=ZERO
+         STG  R0,X'98'(R4)
+         MODESET KEY=NZERO
+*
+*        *****************************************************
+*        *  install intercept                                *
+*        *****************************************************
+         MODESET KEY=ZERO
+         LLGT  R4,STARTADDR
+         LR    R5,R4
+         AHI   R5,X'1E'
+         N     R5,=XL4'FFFFF000'
+         LA    R6,4095(,R5)
+*        LG    R9,=XL8'90ECD00C58901000'
+         LG    R9,JLU_INSTR
+         PGSER R,UNPROTECT,A=(R5),EA=(R6)
+         STG   R9,X'1E'(,R4)
+         PGSER R,PROTECT,A=(R5),EA=(R6)
+         MODESET KEY=NZERO
+*        WTO
+         MVC   WTO_X,WTO_C
+         LA    R15,30
+         STH   R15,WTO_XLEN
+         MVC   WTO_XTEXT(30),=CL30'INSTALL INTERCEPT, COMPLETED!'
+         WTO   TEXT=WTO_XLEN,MF=(E,WTO_X)
+*
+*        *****************************************************
+*        *  Exit                                             *
+*        *****************************************************
+MAINEXIT EQU   *
+         L     R3,STORAGE24_ADDRESS
+         STORAGE RELEASE,LENGTH=STORLEN24,ADDR=(R3)
+         STORAGE RELEASE,LENGTH=STORLEN,ADDR=(R13)
+         PR
+*
+*
+**********************************************************************
+* DATA DEFINE AREA                                                   *
+**********************************************************************
+OPEN_C    OPEN  STEPLIB_C,MF=L,MODE=31
+OPEN_L    EQU   *-OPEN_C
+CLOSE_C   CLOSE STEPLIB_C,MF=L,MODE=31
+CLOSE_L   EQU   *-CLOSE_C
+STEPLIB_C DCB DDNAME=STEPLIB,DSORG=PO,MACRF=(R)
+*
+HEXTB1    DC    CL16'0123456789ABCDEF'
+*
+WTO_C     WTO   TEXT=,ROUTCDE=(11),MF=L     MACRO WTO LISTFORM
+WTO_L     EQU   *-WTO_C                 MACRO WTO LENGTH
+*
+*------------------------------------------------------------*
+* DSECT for other data that must be allocated dynamically    *
+*------------------------------------------------------------*
+STORAGE  DSECT
+EYE_CATCHER    DS  CL8
+STORAGE24_ADDRESS DS A
+STARTLEN       DS  F
+STARTADDR      DS  A
+BADGUYLEN      DS  F
+BADGUYADDR     DS  A
+JLU_INSTR      DS  D
+JLU_INSTR_RET  DS  D
+$LOAD          DS  XL32
+               CSVQUERY  MF=(L,CSVQUERY_LIST),PLISTVER=MAX
+OPENLIST       DS  XL(OPEN_L)
+CLOSLIST       DS  XL(CLOSE_L)
+WTO_X          DS  CL(WTO_L)               MACRO WTO's storage area
+WTO_XLEN       DS  AL2
+WTO_XTEXT      DS  CL80
+STORLEN  EQU   *-STORAGE
+*
+STORAGE24             DSECT
+STORAGE24_EYE_CATCHER DS CL8
+STEPLIB_DCB           DS XL(DCBLNGQS)  ACTUAL QSAM DCB
+STORLEN24             EQU *-STORAGE24
+        DCBD  DSORG=PS,DEVD=DA
+*
+        END
